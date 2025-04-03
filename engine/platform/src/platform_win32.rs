@@ -1,3 +1,6 @@
+
+// 
+
 use windows::{
     core::*, Data::Xml::Dom::*, Win32::Foundation::*, Win32::System::Threading::*,Win32::System::Console::*,
     Win32::System::Diagnostics::Debug::OutputDebugStringW,
@@ -16,7 +19,9 @@ pub const CONSOLE_COLOR_WHITE: u8 = FOREGROUND_RED | FOREGROUND_GREEN | FOREGROU
 
 struct InternalState {
     h_instance: HINSTANCE,
-    hwnd: HWND
+    hwnd: HWND,
+    clock_frequency: i64,  // Store the clock frequency
+    start_time: i64,       // Store the application start time
 }
 
 type b8 = u8;
@@ -26,15 +31,22 @@ pub struct PlatformState {
 
 impl PlatformState {
 
-    fn new() -> Self {
+   pub  fn new() -> Self {
 
         // Get the HINSTANCE for the current module
         let hinstance = unsafe { GetModuleHandleW(None) };
 
+        // Initialize with zero values 
+        let clock_frequency = 0;
+        let start_time = 0;
+        
+
         PlatformState {
             internal_state: InternalState { 
                 h_instance: hinstance,
-                hwnd: HWND(0)
+                hwnd: HWND(0),
+                clock_frequency,
+                start_time
             }
         }
     }
@@ -59,7 +71,7 @@ impl PlatformState {
                     LR_LOADFROMFILE,
                 )
                 .unwrap_or_default()
-                .0 as HICON
+                .into() // Use into() instead of direct casting
             };
 
             let wnd_class = WNDCLASSW {
@@ -101,6 +113,13 @@ impl PlatformState {
 
             self.internal_state.hwnd = hwnd;
             ShowWindow(hwnd,SW_SHOW);
+
+                    // Initialize timing information
+            unsafe {
+                QueryPerformanceFrequency(&mut self.internal_state.clock_frequency);
+                QueryPerformanceCounter(&mut self.internal_state.start_time);
+            }
+        
 
             true
         }
@@ -249,19 +268,112 @@ pub fn platform_debug_format(fmt: &str, args: &[&str]) {
     platform_debug_string(&result);
 }
 
-pub fn platform_get_absolute_time(){
+pub fn platform_get_absolute_time() -> f64{
     unsafe {
-        // Using QueryPerformanceCounter for high precision timing
-        let mut counter = 0i64;
-        QueryPerformanceCounter(&mut counter);
-        let mut frequency = 0i64;
-        QueryPerformanceFrequency(&mut frequency);
-        counter as f64 / frequency as f64
+        let mut current_time = 0i64;
+        QueryPerformanceCounter(&mut current_time);
+        
+        // Calculate seconds since application start
+        let elapsed = current_time - platform_state.internal_state.start_time;
+        elapsed as f64 / platform_state.internal_state.clock_frequency as f64
     }
 }
 
 pub fn platform_sleep(ms: u64){
     unsafe {
         Sleep(ms as u32);
+    }
+}
+
+pub unsafe extern "system" fn wnd_proc (
+    hwnd: HWND,
+    msg: u32,
+    w_param: WPARAM,
+    l_param: LPARAM
+) -> LRESULT {
+    
+    match msg {
+        WM_DESTROY => {
+            PostQuitMessage(0);
+            LRESULT(0)
+        },
+        WM_CLOSE => {
+            // fire am event for the application to quit
+            LRESULT(0)
+        },
+        WM_ERASEBKGND => {
+            LRESULT(1)
+        },
+        WM_SIZE => {
+
+            // let mut rect = RECT::default();
+            // unsafe {
+            //     GetClientRect(hwnd, &mut rect);
+            // }
+            // let width = rect.right - rect.left;
+            // let height = rect.bottom - rect.top;
+            LRESULT(0)
+
+        },
+        WM_KEYDOWN => {
+            println!("Key down");
+            LRESULT(0)
+        }
+        
+        WM_SYSKEYDOWN => {
+            println!("System key down (e.g. Alt)");
+            LRESULT(0)
+        }
+        
+        WM_KEYUP => {
+            println!("Key up");
+            LRESULT(0)
+        }
+        
+        WM_SYSKEYUP => {
+            println!("System key up");
+            LRESULT(0)
+        }
+        
+        WM_LBUTTONDBLCLK => {
+            
+            LRESULT(0)
+        },
+        WM_MOUSEWHEEL => {
+            // let mut  delta = GET_WHEEL_DELTA_WPARAM(wparam);
+            // println!("Mouse wheel delta: {}", delta);
+
+            // if (delta != 0){
+            //     delta = if delta < 0 {
+            //         -1
+            //     }else{
+            //         1
+            //     }
+            // }
+        
+            LRESULT(0)
+        },
+        WM_MOUSEMOVE => {
+            // let x_position = GET_X_LPARAM(l_param);
+            // let y_position = GET_Y_LPARAM(l_param);
+        },
+        WM_LBUTTONDOWN => println!("Left click"),
+        WM_RBUTTONDOWN => println!("Right click"),
+        WM_MBUTTONDOWN => println!("Middle click"),
+        WM_LBUTTONUP => println!("Left button released"),
+        WM_RBUTTONUP => println!("Right button released"),
+        WM_MBUTTONUP => println!("Middle button released"),
+
+        WM_XBUTTONDOWN => {
+            let button = HIWORD(wparam.0 as u32);
+            match button {
+                XBUTTON1 => println!("X1 (back) button clicked"),
+                XBUTTON2 => println!("X2 (forward) button clicked"),
+                _ => {}
+            }
+        },
+        _ => DefWindowProcW(hwnd, msg, wparam, lparam),
+        
+
     }
 }
