@@ -103,8 +103,8 @@ pub fn level_to_string(level: LogLevel) -> &'static str {
 
 // create a log file 
 pub fn initialize_logging() -> bool{
-
-     todo!();
+println!("");
+true
 }
 
 pub fn shutdown_logging(){

@@ -1,5 +1,5 @@
 use std::sync::atomic::{AtomicBool};
-use crate::{common::RESET, logger::logger::{level_color, level_label, LogLevel}};
+use crate::{common::RESET, logger::{level_color, level_label, LogLevel}};
 use  chrono::Local;
 
 

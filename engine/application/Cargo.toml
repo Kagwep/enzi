@@ -1,0 +1,9 @@
+[package]
+name = "application"
+version = "0.1.0"
+edition = "2021"
+
+
+[dependencies]
+logger = { path = "../enzi_core/logger" }
+platform = { path = "../enzi_core/platform" }

@@ -1,13 +1,15 @@
 use core::panic;
-use std::{ffi::CString, time::UNIX_EPOCH};
+use std::{error::Error, ffi::CString, time::UNIX_EPOCH};
 use x11::{xlib::*, xlib_xcb::{XGetXCBConnection, XSetEventQueueOwner}};
 use xcb;
 use xcb::ffi::*;
 use std::thread;
 use std::time::{Duration, SystemTime};
 use xcb::ffi::xcb_connection_t; // ✅ REAL TYPE
-
-
+use image::{GenericImageView};
+use std::fs::File;
+use std::path::Path;
+use crate::errors::{self, PlatformError};
 
 struct InternalState {
     display: *mut x11::xlib::Display,
@@ -25,17 +27,29 @@ pub struct PlatformState {
 
 impl PlatformState {
 
-    pub fn new(application_name: &str, x: i32, y: i32, width: i32, height: i32) -> Self {
-        let internal_state = create_internal_state(application_name, x, y, width, height);
+    pub fn new() -> Self {
         PlatformState {
-            internal_state
+            internal_state: InternalState {
+                display: std::ptr::null_mut(),
+                connection: std::ptr::null_mut(),
+                window: 0,
+                screen: std::ptr::null_mut(),
+                wm_protocols: 0,
+                wm_delete_win: 0,
+            }
         }
     }
+
     
 
-    // fn platform_startup(&mut self, application_name: &str,x: i32, y: i32, width: i32, height: i32){
+    pub fn platform_startup(&mut self,application_name: &str, x: i32, y: i32, width: i32, height: i32) -> Result<(), PlatformError> {
 
-    // }
+       let internal_state = create_internal_state(application_name, x, y, width, height)?;
+       self.internal_state = internal_state;
+
+       Ok(())
+
+    }
 
     pub fn platform_shutdown(&mut self){
 
@@ -192,19 +206,19 @@ pub fn platform_sleep(ms: u64) {
 }
 
 
-pub fn platform_console_write_error(message: &str, colour: &str) -> bool {
+pub fn platform_console_write_error(message: &str, colour: &str){
     platform_console_write(message, colour);
-    true
+    
 }
 
- fn create_internal_state(application_name: &str,x: i32, y: i32, width: i32, height: i32) -> InternalState {
+ fn create_internal_state(application_name: &str,x: i32, y: i32, width: i32, height: i32) -> Result<InternalState, PlatformError> {
         unsafe {
 
             //open Xlib display
             let display = XOpenDisplay(std::ptr::null());
 
             if display.is_null(){
-                panic!("Failed to open X display");
+                return Err(PlatformError::InitializationFailed("Failed to open X display".to_string()));
             }
 
             XAutoRepeatOff(display);
@@ -216,7 +230,7 @@ pub fn platform_console_write_error(message: &str, colour: &str) -> bool {
 
             if connection.is_null(){
                 XCloseDisplay(display);
-                panic!("Failed to get xcb connection from xlib display");
+                return Err(PlatformError::InitializationFailed("Failed to get xcb connection from xlib display".to_string()));
             }
 
             //XSetEventQueueOwner(display, 1);
@@ -316,17 +330,24 @@ pub fn platform_console_write_error(message: &str, colour: &str) -> bool {
                 &wm_delete_win as *const _ as *const std::ffi::c_void,
             );
 
+            
+
+            match set_window_icon_from_png(connection, window, "icon.png"){
+                Ok(_) => (),
+                Err(e) => platform_console_write_error(&format!("{}",e), "red"),
+            }
+
             xcb_map_window(connection, window);
             xcb_flush(connection);
 
-            InternalState {
+            Ok(InternalState {
                 display,
                 connection,
                 window,
                 screen,
                 wm_protocols,
                 wm_delete_win,
-            }
+            })
 
 
         }
@@ -346,4 +367,48 @@ unsafe fn intern_atom(connection: *mut xcb_connection_t, name: &CString) -> xcb_
     let atom = (*reply).atom;
     libc::free(reply as *mut libc::c_void);
     atom
+}
+
+
+pub fn set_window_icon_from_png(connection: *mut xcb_connection_t, window: xcb_window_t, png: &str) -> Result<(), Box<dyn std::error::Error>>{
+
+    let icon = &format!("assets/{}",png);
+
+    let path_png = Path::new(icon);
+
+    let img = image::open(path_png)?;
+    let width = img.width();
+    let height = img.height();
+
+    // prepare the icon data for x11
+    // format width height pixels data where pixels data is in ARGB format
+
+    let mut icon_data = Vec::with_capacity((width *height) as usize + 2);
+
+    icon_data.push(width);
+    icon_data.push(height);
+
+    for y in 0..height{
+        for x in 0..width{
+            let pixel = img.get_pixel(x, y);
+            // convert RGBA to ARGBA 
+            let argb = ((pixel[3] as u32) << 24) | // Alpha
+            ((pixel[0] as u32) << 16) | // Red
+            ((pixel[1] as u32) << 8)  | // Green
+            (pixel[2] as u32);          // Blue
+             icon_data.push(argb);
+        }
+    }
+
+    let new_wm_icon_atom = unsafe { intern_atom(connection, &CString::new("_NET_WM_ICON").unwrap()) };
+
+    // xcb_change_property setting 
+
+    unsafe {
+        xcb_change_property(connection, XCB_PROP_MODE_REPLACE as u8, window, new_wm_icon_atom, XCB_ATOM_CARDINAL, 32, icon_data.len() as u32, icon_data.as_ptr() as *const std::ffi::c_void)
+    };
+
+    Ok(())
+    
+
 }

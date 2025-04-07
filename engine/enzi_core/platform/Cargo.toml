@@ -2,7 +2,6 @@
 name = "platform"
 version = "0.1.0"
 edition = "2021"
-build = "build.rs"
 
 [build-dependencies]
 pkg-config = "0.3"
@@ -11,4 +10,5 @@ pkg-config = "0.3"
 xcb = "=0.9.0"
 x11 = { version = "2.19", features = ["xlib"] }
 libc = "0.2.171"
-
+image = "0.25.6"
+logger = { path = "../logger"}

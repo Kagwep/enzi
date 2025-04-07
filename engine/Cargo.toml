@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "application",
+    "enzi_core/logger",
+    "enzi_core/platform",
+]
